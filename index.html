@@ -1,4 +1,4 @@
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="cs">
 <head>
     <meta charset="UTF-8">
@@ -145,6 +145,7 @@
     const ctx = canvas.getContext('2d');
     let drawing = false;
     let painted = false;
+    let step1Ok = false;
 
     ctx.lineWidth = 10;
     ctx.lineCap = 'round';
@@ -187,12 +188,12 @@
         ctx.stroke();
     }
 
-    // Event Listenery
+    // Event Listenery pro kreslení
     canvas.addEventListener('mousedown', start);
     canvas.addEventListener('mousemove', draw);
     window.addEventListener('mouseup', stop);
 
-    // Dotykové ovládání (opraveno volání preventDefault)
+    // Dotykové ovládání
     canvas.addEventListener('touchstart', (e) => {
         if (e.target === canvas) e.preventDefault();
         start(e);
@@ -208,7 +209,28 @@
         stop();
     }, { passive: false });
 
-    // 3. MIKROFON (OPRAVENO)
+    // PŘIDÁNO ZPĚT: Event Listenery pro tlačítka Smazat a Hotovo
+    document.getElementById('clear-btn').onclick = () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        painted = false;
+        step1Ok = false;
+        document.getElementById('draw-status').textContent = "";
+    };
+
+    document.getElementById('confirm-draw').onclick = () => {
+        if (painted) {
+            step1Ok = true;
+            document.getElementById('draw-status').innerHTML = "Splněno ✔️";
+            document.getElementById('draw-status').className = "status success";
+            checkAll();
+        } else {
+            document.getElementById('draw-status').innerHTML = "Nejdřív něco nakresli!";
+            document.getElementById('draw-status').className = "status error";
+        }
+    };
+
+
+    // 3. MIKROFON
     const micBtn = document.getElementById('mic-btn');
     const micStatus = document.getElementById('mic-status');
     let step2Ok = false;
@@ -222,12 +244,11 @@
 
         rec.onresult = (e) => {
             let result = e.results[0][0].transcript;
-            // Převedeme výsledek na Katakanu pro srovnání
             let normalizedResult = toKatakana(result);
             
             if (normalizedResult.includes(todayChar.c) || result.toLowerCase().includes(todayChar.r)) {
                 step2Ok = true;
-                micStatus.innerHTML = `Slyším správně: ${normalizedResult} `;
+                micStatus.innerHTML = `Slyším správně: ${normalizedResult} ✔️`;
                 micStatus.className = "status success";
                 checkAll();
             } else {
@@ -235,7 +256,10 @@
                 micStatus.className = "status error";
             }
         };
-        rec.onend = () => { micBtn.textContent = "Zapnout mikrofon"; };
+        rec.onend = () => { micBtn.textContent = "Zkontrolovat výslovnost"; };
+    } else {
+        micStatus.innerHTML = "Tvůj prohlížeč nepodporuje rozpoznávání hlasu.";
+        micStatus.className = "status error";
     }
 
     // PROGRESS
@@ -250,6 +274,8 @@
             document.getElementById('score').textContent = s;
         }
     }
+    
+    // Načtení skóre po startu stránky
     document.getElementById('score').textContent = localStorage.getItem('k_score') || 0;
 </script>
 
