@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VLČR - Kurz ostrého písma</title>
+    <style>
+        :root {
+            --primary: #2ecc71;
+            --primary-dark: #27ae60;
+            --bg: #f0f9f4;
+            --card-bg: #ffffff;
+            --text: #2c3e50;
+            --accent: #ebfbee;
+        }
+        body {
+            font-family: 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            background-color: var(--card-bg);
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 15px 30px rgba(46, 204, 113, 0.15);
+            max-width: 450px;
+            width: 100%;
+            text-align: center;
+            border: 2px solid var(--accent);
+        }
+        .character-display {
+            font-size: 100px;
+            margin: 10px 0;
+            color: var(--primary-dark);
+            background: var(--accent);
+            border-radius: 15px;
+            display: inline-block;
+            padding: 10px 40px;
+        }
+        .romaji { font-size: 28px; color: #7f8c8d; margin-bottom: 20px; font-weight: 300; }
+        
+        canvas {
+            border: 3px solid var(--accent);
+            border-radius: 12px;
+            cursor: crosshair;
+            background-color: #fff;
+            touch-action: none;
+        }
+        
+        .btn-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin: 15px 0;
+        }
+        
+        button {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        button:hover { background-color: var(--primary-dark); transform: translateY(-1px); }
+        button:active { transform: translateY(1px); }
+        .btn-secondary { background-color: #95a5a6; }
+        .btn-audio { background-color: #3498db; width: 100%; margin-bottom: 10px; }
+
+        .status { margin-top: 10px; font-size: 14px; min-height: 20px; font-weight: 600; }
+        .success { color: #27ae60; }
+        .error { color: #e74c3c; }
+
+        .progress-box {
+            margin-top: 25px;
+            padding: 15px;
+            background: var(--accent);
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2 style="color: var(--primary-dark);">Katakana Dne</h2>
+    
+    <div class="character-display" id="char-display">コ</div>
+    <div class="romaji" id="romaji-display">ko</div>
+
+    <button class="btn-audio" id="play-audio-btn">Výslovnost</button>
+
+    <h3>1. Nakresli znak</h3>
+    <canvas id="paint-canvas" width="250" height="250"></canvas>
+    <div class="btn-group">
+        <button class="btn-secondary" id="clear-btn">Smazat</button>
+        <button id="confirm-draw">Hotovo</button>
+    </div>
+    <div id="draw-status" class="status"></div>
+
+    <h3>2. Zopakuj výslovnost</h3>
+    <button id="mic-btn" style="width: 100%;">🎤 Zapnout mikrofon</button>
+    <div id="mic-status" class="status"></div>
+
+    <div class="progress-box">
+        Zvládnuto znaků: <b id="score">0</b>
+    </div>
+</div>
+
+<script>
+    const katakanaData = [
+        { c: 'ア', r: 'a' }, { c: 'イ', r: 'i' }, { c: 'ウ', r: 'u' }, { c: 'エ', r: 'e' }, { c: 'オ', r: 'o' },
+        { c: 'カ', r: 'ka' }, { c: 'キ', r: 'ki' }, { c: 'ク', r: 'ku' }, { c: 'ケ', r: 'ke' }, { c: 'コ', r: 'ko' },
+        { c: 'サ', r: 'sa' }, { c: 'シ', r: 'shi' }, { c: 'ス', r: 'su' }, { c: 'セ', r: 'se' }, { c: 'ソ', r: 'so' }
+    ];
+
+    // Výběr znaku
+    const dayIndex = Math.floor(new Date() / 8.64e7) % katakanaData.length;
+    const todayChar = katakanaData[dayIndex];
+    document.getElementById('char-display').textContent = todayChar.c;
+    document.getElementById('romaji-display').textContent = todayChar.r;
+
+    // Funkce pro převod Hiragany na Katakanu (Normalizace)
+    function toKatakana(text) {
+        return text.replace(/[\u3041-\u3096]/g, (s) => String.fromCharCode(s.charCodeAt(0) + 0x60));
+    }
+
+    // 1. AUDIO VÝSLOVNOST
+    document.getElementById('play-audio-btn').addEventListener('click', () => {
+        const msg = new SpeechSynthesisUtterance(todayChar.c);
+        msg.lang = 'ja-JP';
+        msg.rate = 0.8;
+        window.speechSynthesis.speak(msg);
+    });
+
+    // 2. KRESLENÍ
+    const canvas = document.getElementById('paint-canvas');
+    const ctx = canvas.getContext('2d');
+    let drawing = false;
+    let painted = false;
+
+    ctx.lineWidth = 10;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#2c3e50';
+
+    function getPos(e) {
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.clientX || (e.touches ? e.touches[0].clientX : 0);
+        const clientY = e.clientY || (e.touches ? e.touches[0].clientY : 0);
+        return { x: clientX - rect.left, y: clientY - rect.top };
+    }
+
+    function start(e) { drawing = true; painted = true; draw(e); }
+    function stop() { drawing = false; ctx.beginPath(); }
+    function draw(e) {
+        if (!drawing) return;
+        const pos = getPos(e);
+        ctx.lineTo(pos.x, pos.y);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y);
+    }
+
+    canvas.addEventListener('mousedown', start);
+    canvas.addEventListener('mousemove', draw);
+    window.addEventListener('mouseup', stop);
+    canvas.addEventListener('touchstart', (e) => { e.preventDefault(); start(e); });
+    canvas.addEventListener('touchmove', (e) => { e.preventDefault(); draw(e); });
+
+    document.getElementById('clear-btn').onclick = () => {
+        ctx.clearRect(0,0,250,250);
+        painted = false;
+        document.getElementById('draw-status').textContent = "";
+    };
+
+    let step1Ok = false;
+    document.getElementById('confirm-draw').onclick = () => {
+        if(painted) {
+            step1Ok = true;
+            document.getElementById('draw-status').innerHTML = "Splněno";
+            document.getElementById('draw-status').className = "status success";
+            checkAll();
+        }
+    };
+
+    // 3. MIKROFON (OPRAVENO)
+    const micBtn = document.getElementById('mic-btn');
+    const micStatus = document.getElementById('mic-status');
+    let step2Ok = false;
+
+    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRec) {
+        const rec = new SpeechRec();
+        rec.lang = 'ja-JP';
+
+        micBtn.onclick = () => { rec.start(); micBtn.textContent = "Poslouchám..."; };
+
+        rec.onresult = (e) => {
+            let result = e.results[0][0].transcript;
+            // Převedeme výsledek na Katakanu pro srovnání
+            let normalizedResult = toKatakana(result);
+            
+            if (normalizedResult.includes(todayChar.c) || result.toLowerCase().includes(todayChar.r)) {
+                step2Ok = true;
+                micStatus.innerHTML = `Slyším správně: ${normalizedResult} `;
+                micStatus.className = "status success";
+                checkAll();
+            } else {
+                micStatus.innerHTML = `Slyšel jsem: ${result} (Zkus to znovu)`;
+                micStatus.className = "status error";
+            }
+        };
+        rec.onend = () => { micBtn.textContent = "Zapnout mikrofon"; };
+    }
+
+    // PROGRESS
+    function checkAll() {
+        if (step1Ok && step2Ok) {
+            let s = parseInt(localStorage.getItem('k_score') || 0);
+            if (localStorage.getItem('k_date') !== new Date().toDateString()) {
+                s++;
+                localStorage.setItem('k_score', s);
+                localStorage.setItem('k_date', new Date().toDateString());
+            }
+            document.getElementById('score').textContent = s;
+        }
+    }
+    document.getElementById('score').textContent = localStorage.getItem('k_score') || 0;
+</script>
+
+</body>
+</html>
